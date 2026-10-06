@@ -1,3 +1,32 @@
+const API_BASE='/api';
+
+async function checkBackend(){
+  try{
+    const response=await fetch(`${API_BASE}/health`);
+    const result=await response.json();
+    console.log('Backend:',result);
+  }catch(error){
+    console.error('Backend connection failed:',error);
+  }
+}
+
+async function loadCandidatesFromAPI(){
+  try{
+    const response=await fetch(`${API_BASE}/candidates`);
+    if(!response.ok) throw new Error('Failed to load candidates');
+
+    const candidates=await response.json();
+
+    if(Array.isArray(candidates)){
+      data.candidates=candidates;
+      console.log('Candidates loaded from API:',candidates);
+      renderAll();
+    }
+  }catch(error){
+    console.error('Could not load candidates from API:',error);
+  }
+}
+
 const STORAGE_KEY='talentflow_ai_data_v1';
 const SESSION_KEY='talentflow_ai_session';
 
@@ -77,9 +106,84 @@ function bindCandidateButtons(){document.querySelectorAll('[data-candidate]').fo
 
 function openCandidate(id){const c=data.candidates.find(x=>x.id===id);if(!c)return;openModal('CANDIDATE','Candidate Profile',`<div><h3>${esc(c.name)}</h3><p class="ai-main-text">${esc(c.email)} · ${esc(c.experience)}</p><div class="job-meta"><span class="tag">${esc(c.role)}</span><span class="tag">AI Match ${c.score}%</span><span class="tag">${esc(c.stage)}</span></div><hr style="border:0;border-top:1px solid var(--line);margin:18px 0"><label>Update stage</label><select id="candidateStageEdit" class="form-control">${['Applied','Screening','Shortlisted','Interview','Offer','Hired','Rejected'].map(s=>`<option ${s===c.stage?'selected':''}>${s}</option>`).join('')}</select><button class="primary-button" id="saveCandidateStage" style="margin-top:14px">Save Changes</button></div>`);$('saveCandidateStage').onclick=()=>{c.stage=$('candidateStageEdit').value;saveData();closeModal();renderAll();showToast('Candidate stage updated')}}
 function openInterview(id){const i=data.interviews.find(x=>x.id===id);if(!i)return;openModal('INTERVIEW','Interview Details',`<h3>${esc(i.candidate)}</h3><p class="ai-main-text">${esc(i.role)}</p><p><strong>Date:</strong> ${fmtDate(i.date)}<br><strong>Time:</strong> ${esc(i.time)}<br><strong>Interviewer:</strong> ${esc(i.interviewer)}</p><a class="primary-button" style="display:inline-block;text-decoration:none" href="${esc(i.link)}" target="_blank">Open Meeting</a>`)}
-function openModal(kicker,title,body){$('modalKicker').textContent=kicker;$('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modalOverlay').classList.add('open')}
-function closeModal(){$('modalOverlay').classList.remove('open')}
-function addCandidate(){openModal('TALENT POOL','Add Candidate',`<form class="modal-form" id="candidateForm"><div><label>Name</label><input id="newName" required></div><div><label>Email</label><input type="email" id="newEmail" required></div><div><label>Position</label><input id="newRole" required></div><div><label>Experience</label><input id="newExperience" placeholder="e.g. 2 years" required></div><div><label>AI Match</label><input id="newScore" type="number" min="0" max="100" value="85" required></div><button class="primary-button">Add Candidate</button></form>`);$('candidateForm').onsubmit=e=>{e.preventDefault();data.candidates.unshift({id:Date.now(),name:$('newName').value,email:$('newEmail').value,role:$('newRole').value,experience:$('newExperience').value,score:+$('newScore').value,stage:'Applied',applied:new Date().toISOString().slice(0,10),source:'Website'});saveData();closeModal();renderAll();showToast('Candidate added')}}
+function openModal(kicker,title,body){$('modalKicker').textContent=kicker;$('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modalOverlay').classList.add('active')}
+function closeModal(){$('modalOverlay').classList.remove('active')}
+
+async function addCandidate(){
+  openModal(
+    'TALENT POOL',
+    'Add Candidate',
+    `<form class="modal-form" id="candidateForm">
+      <div>
+        <label>Name</label>
+        <input id="newName" required>
+      </div>
+
+      <div>
+        <label>Email</label>
+        <input type="email" id="newEmail" required>
+      </div>
+
+      <div>
+        <label>Position</label>
+        <input id="newRole" required>
+      </div>
+
+      <div>
+        <label>Experience</label>
+        <input id="newExperience" placeholder="e.g. 2 years" required>
+      </div>
+
+      <div>
+        <label>AI Match</label>
+        <input id="newScore" type="number" min="0" max="100" value="85" required>
+      </div>
+
+      <button class="primary-button">Add Candidate</button>
+    </form>`
+  );
+
+  $('candidateForm').onsubmit = async e => {
+    e.preventDefault();
+
+    const candidate = {
+      name: $('newName').value,
+      email: $('newEmail').value,
+      role: $('newRole').value,
+      experience: $('newExperience').value,
+      score: Number($('newScore').value)
+    };
+
+    try {
+      const response = await fetch(`${API_BASE}/candidates`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(candidate)
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to add candidate');
+      }
+
+      closeModal();
+
+      await loadCandidatesFromAPI();
+
+      showToast('Candidate added successfully');
+
+      console.log('Candidate added:', result);
+
+    } catch (error) {
+      console.error('Add candidate failed:', error);
+      showToast('Failed to add candidate');
+    }
+  };
+}
+
 function addJob(){openModal('RECRUITMENT','Create Job',`<form class="modal-form" id="jobForm"><div><label>Job Title</label><input id="jobTitle" required></div><div><label>Department</label><input id="jobDept" required></div><div><label>Location</label><input id="jobLocation" required></div><div><label>Type</label><select id="jobType"><option>Full-time</option><option>Part-time</option><option>Contract</option></select></div><button class="primary-button">Create Job</button></form>`);$('jobForm').onsubmit=e=>{e.preventDefault();data.jobs.unshift({id:Date.now(),title:$('jobTitle').value,department:$('jobDept').value,location:$('jobLocation').value,type:$('jobType').value,applicants:0});saveData();closeModal();renderAll();showToast('Job opening created')}}
 function scheduleInterview(){openModal('INTERVIEW MANAGEMENT','Schedule Interview',`<form class="modal-form" id="interviewForm"><div><label>Candidate</label><select id="intCandidate">${data.candidates.map(c=>`<option value="${c.id}">${esc(c.name)} — ${esc(c.role)}</option>`).join('')}</select></div><div><label>Date</label><input type="date" id="intDate" required></div><div><label>Time</label><input type="text" id="intTime" placeholder="10:30 AM" required></div><div><label>Interviewer</label><input id="intInterviewer" required></div><button class="primary-button">Schedule Interview</button></form>`);$('interviewForm').onsubmit=e=>{e.preventDefault();const c=data.candidates.find(x=>x.id===+$('intCandidate').value);data.interviews.push({id:Date.now(),candidate:c.name,role:c.role,date:$('intDate').value,time:$('intTime').value,interviewer:$('intInterviewer').value,status:'Scheduled',link:'https://meet.google.com/'});saveData();closeModal();renderAll();showToast('Interview scheduled')}}
 
@@ -87,3 +191,5 @@ function initActions(){document.querySelectorAll('[data-action="add-candidate"]'
 
 function boot(){initAuth();initNavigation();initActions();if(!currentUser){$('app').classList.add('hidden');$('authScreen').classList.remove('hidden')}else{$('authScreen').classList.add('hidden');$('app').classList.remove('hidden')}}
 boot();
+checkBackend();
+loadCandidatesFromAPI();
